@@ -51,7 +51,7 @@ cat <<EOF
 ✅ 已发布 ${TAG}
    digest 用 docker manifest inspect ${IMAGE}:${TAG} 查
 
-把 dashboard-api 的 docker-compose.yml 里 alpha_mobile 的 image 换成：
+把 docker_api 的 api/docker-compose.yml 里 alpha_mobile 的 image 换成：
 
     image: ${IMAGE}:${TAG}
 
