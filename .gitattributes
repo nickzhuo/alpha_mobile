@@ -1,0 +1,7 @@
+# 开发在 Windows、部署在 Linux，统一按 LF 存库，避免 Dockerfile / 脚本带 CRLF 在容器里报错
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
