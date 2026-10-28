@@ -4,6 +4,9 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# alpine(musl) 下 next 的原生依赖需要 glibc 兼容层
+RUN apk add --no-cache libc6-compat
+
 # 依赖层单独一层，改业务代码不会让它失效
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
