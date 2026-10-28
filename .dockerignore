@@ -9,6 +9,5 @@ npm-debug.log*
 .env.*
 !.env.example
 README.md
-deploy
 .vscode
 .idea

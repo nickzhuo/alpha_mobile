@@ -27,7 +27,7 @@ src/
     api.ts                   delta 接口封装（Data Cache + 超时兜底）
     viewmodel.ts             原始 JSON → 展示模型（文案字典与小程序 vm.js 对齐）
     seo.ts                   metadata / JSON-LD 组装
-deploy/docker-compose.yml    Traefik 接入片段
+deploy 配置不在这里：容器定义和 Traefik 路由写在 `docker_api` 仓库的 `api/docker-compose.yml`（与 delta 同一个 compose 项目）。
 ```
 
 ## 本地开发
@@ -61,16 +61,26 @@ npm start              # node .next/standalone/server.js
 
 ## 部署
 
+流程和 delta 一致：**推 git → TCR 构建镜像 → 服务器拉镜像重启**。容器定义在 `docker_api` 仓库的 `api/docker-compose.yml`（服务名 `alpha_mobile`，与 delta 同一个 compose 项目、同一个 `traefik` 网络）。
+
 ```bash
-docker build -t ccr.ccs.tencentyun.com/zhouzhou/alpha-mobile:latest .
-docker push ccr.ccs.tencentyun.com/zhouzhou/alpha-mobile:latest
-# 服务器上
-cd /data/alpha_mobile && docker-compose pull && docker-compose up -d
+# 1. 本地推代码
+git push github master
+
+# 2. 腾讯云 TCR 选 alpha_mobile 仓库，从 GitHub master 构建，推到
+#    ccr.ccs.tencentyun.com/zhouzhou/alpha_mobile
+
+# 3. 服务器上（docker-compose 是 v1.28.6，pull 不会隐式拉，必须显式 pull）
+cd /data/api
+docker-compose pull alpha_mobile
+docker-compose up -d alpha_mobile
 ```
 
-Traefik 只挂 `web`（80）入口，**不要加 http→https 跳转**：线上是 EdgeOne 终止 TLS 后 HTTP 回源，源站跳转会导致回源死循环。
+回滚：把 compose 里的 `:latest` 换成 TCR 里的 sha tag（`docker-compose up -d alpha_mobile` 会重建容器）。
 
-镜像需在腾讯云 DNSPod 上把 `mobile.91xungou.com` 解析到回源地址，并在 EdgeOne 侧新建站点（HTTPS 证书在 CDN 侧）。
+Traefik 只挂 `web`（80）入口，**不要加 http→https 跳转**：线上是 EdgeOne 终止 TLS 后 HTTP 回源，源站跳转会导致回源死循环，对外常表现为 404。
+
+首次上线需要：DNSPod 把 `mobile.91xungou.com` 指到回源地址 → EdgeOne 新建站点（证书在 CDN 侧）→ 服务器 `docker-compose up -d alpha_mobile`。
 
 ## 关键决策
 
