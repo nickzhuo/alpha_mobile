@@ -1,0 +1,33 @@
+# alpha_mobile —— 寻狗 H5 详情页
+#
+# 放到服务器上任意目录（建议 /data/alpha_mobile），与本目录的 cache/ 同级挂载。
+# 前置：已有 external network `traefik`（与 api / b919p4 等站点共用）。
+#
+# 注意：源站只挂 web(80) 入口，不做 http→https 跳转。
+# 线上是「EdgeOne 终止 TLS → HTTP 回源 → Traefik」，源站跳 https 会造成回源死循环（对外表现常是 404）。
+
+services:
+  alpha-mobile:
+    image: ccr.ccs.tencentyun.com/zhouzhou/alpha-mobile:latest
+    container_name: alpha_mobile
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      NEXT_PUBLIC_SITE_URL: https://mobile.91xungou.com
+      API_BASE: https://api.91xungou.com
+      API_REVALIDATE: "300"
+    volumes:
+      # 小程序码缓存，容器重建不用重新找微信要码
+      - ./cache:/app/.cache
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      - traefik.http.routers.alpha-mobile.rule=Host(`mobile.91xungou.com`)
+      - traefik.http.routers.alpha-mobile.entrypoints=web
+      - traefik.http.services.alpha-mobile.loadbalancer.server.port=3000
+
+networks:
+  traefik:
+    external: true
