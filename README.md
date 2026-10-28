@@ -61,14 +61,15 @@ npm start              # node .next/standalone/server.js
 
 ## 部署
 
-流程和 delta 一致：**推 git → TCR 构建镜像 → 服务器拉镜像重启**。容器定义在 `docker_api` 仓库的 `api/docker-compose.yml`（服务名 `alpha_mobile`，与 delta 同一个 compose 项目、同一个 `traefik` 网络）。
+**手工构建发版，不走 GitHub Actions**（Actions 从 GitHub 推 TCR 太慢）。
+
+容器定义在 `docker_api` 仓库的 `api/docker-compose.yml`（服务名 `alpha_mobile`，与 delta 同一个 compose 项目、同一个 `traefik` 网络）。
 
 ```bash
-# 1. 本地推代码
-git push github master
+# 1. 本地构建 + 推送，脚本会打印新版本号（工作区必须干净）
+./scripts/release.sh          # → alpha_mobile-master-<完整 sha>
 
-# 2. 腾讯云 TCR 选 alpha_mobile 仓库，从 GitHub master 构建，推到
-#    ccr.ccs.tencentyun.com/zhouzhou/alpha_mobile
+# 2. 把 docker_api/api/docker-compose.yml 里 alpha_mobile 的 image tag 换成上一步的版本号
 
 # 3. 服务器上（docker-compose 是 v1.28.6，pull 不会隐式拉，必须显式 pull）
 cd /data/api
@@ -76,7 +77,9 @@ docker-compose pull alpha_mobile
 docker-compose up -d alpha_mobile
 ```
 
-回滚：把 compose 里的 `:latest` 换成 TCR 里的 sha tag（`docker-compose up -d alpha_mobile` 会重建容器）。
+镜像 tag 用 `<完整 sha>` 而不是 `latest`：线上跑的到底是哪次提交一眼能看出来，回滚也只需要改回上一版 tag。
+
+> 脚本会顺带更新 `:latest`，那是给临时排查用的，生产 compose 不要锁 `latest`。
 
 Traefik 只挂 `web`（80）入口，**不要加 http→https 跳转**：线上是 EdgeOne 终止 TLS 后 HTTP 回源，源站跳转会导致回源死循环，对外常表现为 404。
 
