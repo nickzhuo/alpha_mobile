@@ -609,6 +609,18 @@ dt {
   opacity: 0.86;
 }
 
+/* 微信开放标签：宿主要撑满，内部按钮样式在 shadow DOM 里另写 */
+.mp-wxa-host {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+}
+
+.mp-wxa-host wx-open-launch-weapp {
+  display: block;
+  width: 100%;
+}
+
 /* ------------------------------------------------------------------ 小程序码浮层 */
 
 .mp-sheet {

@@ -1,5 +1,5 @@
 import { CATEGORY_LABELS } from '@/lib/constants';
-import { ICP_BEIAN, MP_ONLY_NOTICE, SITE_NAME, SITE_URL } from '@/lib/site';
+import { ICP_BEIAN, MP_ONLY_NOTICE, SITE_NAME, SITE_URL, WXA_ORIGINAL_ID } from '@/lib/site';
 import type { DetailVM } from '@/lib/viewmodel';
 
 import Gallery from './Gallery';
@@ -233,7 +233,7 @@ export default function DetailView({ vm }: { vm: DetailVM }) {
         </footer>
       </main>
 
-      <MiniProgramCta qr={vm.qr} />
+      <MiniProgramCta qr={vm.qr} type={vm.category} id={vm.id} wxaUsername={WXA_ORIGINAL_ID} />
     </div>
   );
 }

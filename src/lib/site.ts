@@ -15,6 +15,9 @@ export const IMG_BASE = (process.env.NEXT_PUBLIC_IMG_BASE || 'https://img.91xung
 /** 小程序 AppID，仅用于展示与文案，不参与任何鉴权 */
 export const WXA_APPID = 'wxc93395d0a3c41c49';
 
+/** 小程序原始 ID —— 微信开放标签的 username 只认这个，不认 AppID */
+export const WXA_ORIGINAL_ID = process.env.WXA_ORIGINAL_ID || 'gh_0c80acc3f473';
+
 export const WXA_NAME = '寻狗';
 
 export const ICP_BEIAN = process.env.NEXT_PUBLIC_ICP_BEIAN || '';
