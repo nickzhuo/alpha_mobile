@@ -12,6 +12,8 @@ interface Props {
   qr: string;
   type: 'lost' | 'stray' | 'adopt';
   id: number;
+  /** 服务端从缓存里读到的 scheme，有值就能同步跳转 */
+  initialScheme?: string | null;
 }
 
 /**
@@ -38,7 +40,7 @@ function detectEnv(): Env {
   return 'desktop';
 }
 
-export default function MiniProgramCta({ qr, type, id }: Props) {
+export default function MiniProgramCta({ qr, type, id, initialScheme }: Props) {
   const [env, setEnv] = useState<Env>('desktop');
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -51,10 +53,11 @@ export default function MiniProgramCta({ qr, type, id }: Props) {
   useEffect(() => {
     const current = detectEnv();
     setEnv(current);
+    if (initialScheme) schemeRef.current = initialScheme;
     if (new URLSearchParams(window.location.search).get('debug') === '1') {
       setDebugInfo([`ua=${navigator.userAgent.slice(0, 60)}`, `env=${current}`]);
     }
-  }, []);
+  }, [initialScheme]);
 
   // 页面里其他位置（地图卡、留言卡）的按钮也要能唤起浮层
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { CATEGORY_LABELS } from '@/lib/constants';
+import { readSchemeCache } from '@/lib/scheme-cache';
 import { ICP_BEIAN, MP_ONLY_NOTICE, SITE_NAME, SITE_URL } from '@/lib/site';
 import type { DetailVM } from '@/lib/viewmodel';
 
@@ -65,6 +66,8 @@ function MapNote({ category }: { category: DetailVM['category'] }) {
 }
 
 export default function DetailView({ vm }: { vm: DetailVM }) {
+  // 预取过的 scheme 直接写进 HTML，点击时才能同步跳转
+  const scheme = readSchemeCache(vm.category, vm.id);
   const tag = CATEGORY_LABELS[vm.category];
   const showLocation = Boolean(vm.location.region || vm.location.name || vm.location.address);
 
@@ -233,7 +236,7 @@ export default function DetailView({ vm }: { vm: DetailVM }) {
         </footer>
       </main>
 
-      <MiniProgramCta qr={vm.qr} type={vm.category} id={vm.id} />
+      <MiniProgramCta qr={vm.qr} type={vm.category} id={vm.id} initialScheme={scheme} />
     </div>
   );
 }
