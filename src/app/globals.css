@@ -610,18 +610,6 @@ dt {
 }
 
 
-/* 微信开放标签模式下的小字逃生入口 */
-.mp-cta__alt {
-  display: block;
-  width: 100%;
-  margin-top: 7px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 /* ?debug=1 时的诊断面板，只在排查时出现 */
 .mp-debug {
   position: fixed;
@@ -640,17 +628,6 @@ dt {
   word-break: break-all;
 }
 
-/* 微信开放标签：宿主要撑满，内部按钮样式在 shadow DOM 里另写 */
-.mp-wxa-host {
-  display: block;
-  width: 100%;
-  min-height: 54px;
-}
-
-.mp-wxa-host wx-open-launch-weapp {
-  display: block;
-  width: 100%;
-}
 
 /* ------------------------------------------------------------------ 小程序码浮层 */
 
@@ -720,8 +697,8 @@ dt {
 }
 
 .mp-sheet__qr {
-  width: 196px;
-  height: 196px;
+  width: 216px;
+  height: 216px;
   margin: 16px auto 12px;
   padding: 8px;
   border: 1px solid var(--line);

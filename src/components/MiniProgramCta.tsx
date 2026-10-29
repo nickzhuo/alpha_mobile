@@ -5,26 +5,30 @@ import { useEffect, useRef, useState } from 'react';
 import { CloseIcon, MiniProgramIcon } from './Icons';
 
 const OPEN_EVENT = 'alpha:open-mp';
-const SDK_SRC = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
 
 type Env = 'wechat' | 'mobile' | 'desktop';
-/** openTag = 微信内开放标签；fallback = 普通按钮（外部浏览器先试 scheme，微信内直接出二维码） */
-type Mode = 'checking' | 'openTag' | 'fallback';
 
 interface Props {
   qr: string;
   type: 'lost' | 'stray' | 'adopt';
   id: number;
-  /** 小程序原始 ID，开放标签的 username 必须用它（AppID 不行） */
-  wxaUsername: string;
-  /** 是否启用微信开放标签；账号资质不到位时关掉，避免出现点击无响应的死按钮 */
-  enableOpenTag: boolean;
 }
 
+/**
+ * 只有两种路径：
+ *   微信内（订阅号用不了开放标签，微信只对已认证服务号开放）→ 弹小程序码，长按识别
+ *   外部浏览器 → URL Scheme 直接拉起微信进小程序，2.5 秒没跳走退回二维码
+ */
 const STEPS: Record<Env, string[]> = {
-  wechat: ['长按下方小程序码', '在弹出的菜单里选「识别图中小程序码」', '进入启事详情页查看联系方式'],
-  mobile: ['长按小程序码，保存到相册', '打开微信「扫一扫」，点右上角相册', '选中刚保存的图片即可打开'],
-  desktop: ['打开手机微信「扫一扫」', '扫描下方小程序码', '进入启事详情页查看联系方式'],
+  wechat: ['长按上方小程序码', '选择「识别图中小程序码」', '直接进入启事详情页'],
+  mobile: ['长按小程序码保存到相册', '打开微信「扫一扫」→ 右上角相册', '选中图片即可打开'],
+  desktop: ['打开手机微信「扫一扫」', '扫描上方小程序码', '进入启事详情页'],
+};
+
+const TITLES: Record<Env, string> = {
+  wechat: '长按识别小程序码',
+  mobile: '微信扫码打开',
+  desktop: '微信扫码打开',
 };
 
 function detectEnv(): Env {
@@ -34,155 +38,32 @@ function detectEnv(): Env {
   return 'desktop';
 }
 
-/** 动态加载微信 JS-SDK，一页只加载一次 */
-function loadSdk(): Promise<void> {
-  const existing = document.getElementById('wx-jssdk') as HTMLScriptElement | null;
-  if (existing) {
-    return existing.dataset.ready === '1'
-      ? Promise.resolve()
-      : new Promise((resolve, reject) => {
-          existing.addEventListener('load', () => resolve());
-          existing.addEventListener('error', () => reject(new Error('sdk load failed')));
-        });
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.id = 'wx-jssdk';
-    script.src = SDK_SRC;
-    script.async = true;
-    script.addEventListener('load', () => {
-      script.dataset.ready = '1';
-      resolve();
-    });
-    script.addEventListener('error', () => reject(new Error('sdk load failed')));
-    document.head.appendChild(script);
-  });
-}
-
-export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTag }: Props) {
+export default function MiniProgramCta({ qr, type, id }: Props) {
   const [env, setEnv] = useState<Env>('desktop');
-  const [mode, setMode] = useState<Mode>('checking');
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
-  const timerRef = useRef<number | null>(null);
-  const wxaHostRef = useRef<HTMLDivElement | null>(null);
-  /** 预取到的 scheme，点击时同步使用 */
-  const schemeRef = useRef<string | null>(null);
-  /** ?debug=1 时在页面上打出诊断信息，手机上排查用 */
   const [debugInfo, setDebugInfo] = useState<string[] | null>(null);
 
-  // 开放标签自身报错（小程序未发布、主体不匹配等）也退回二维码，别让用户点了没反应
-  useEffect(() => {
-    if (mode !== 'openTag') return;
-    const host = wxaHostRef.current;
-    const tag = host?.querySelector('wx-open-launch-weapp');
-    if (!tag) return;
+  const timerRef = useRef<number | null>(null);
+  /** 预取到的 scheme，点击时同步使用 */
+  const schemeRef = useRef<string | null>(null);
 
-    const onError = () => {
-      setMode('fallback');
-      setOpen(true);
-    };
-    tag.addEventListener('error', onError);
-
-    // 标签被微信升级后会撑出高度；1.2 秒还是 0 说明没升级成功，退回普通按钮
-    const timer = window.setTimeout(() => {
-      const h = tag.getBoundingClientRect().height ?? 0;
-      setDebugInfo((prev) => (prev ? [...prev, `tagHeight=${Math.round(h)}`] : prev));
-      if (h < 8) setMode('fallback');
-    }, 1200);
-
-    return () => {
-      tag.removeEventListener('error', onError);
-      window.clearTimeout(timer);
-    };
-  }, [mode]);
-
-  // 环境判断；微信内尝试接开放标签，失败一律退回二维码
   useEffect(() => {
     const current = detectEnv();
     setEnv(current);
-
-    if (current !== 'wechat' || !enableOpenTag) {
-      setMode('fallback');
-      return;
+    if (new URLSearchParams(window.location.search).get('debug') === '1') {
+      setDebugInfo([`ua=${navigator.userAgent.slice(0, 60)}`, `env=${current}`]);
     }
+  }, []);
 
-    let cancelled = false;
-    const pageUrl = window.location.href.split('#')[0];
-    const debugOn = new URLSearchParams(window.location.search).get('debug') === '1';
-    const notes: string[] = [`ua=${navigator.userAgent.slice(0, 60)}`, `env=${current}`];
-    const push = (line: string) => {
-      notes.push(line);
-      if (debugOn && !cancelled) setDebugInfo([...notes]);
-    };
-    if (debugOn) setDebugInfo([...notes]);
-
-    (async () => {
-      try {
-        await loadSdk();
-        if (cancelled) return;
-        push('sdk=ok');
-
-        const params = new URLSearchParams({ url: pageUrl });
-        const res = await fetch(`/api/jssdk?${params.toString()}`);
-        if (!res.ok) {
-          push(`jssdk=http ${res.status} ${(await res.text()).slice(0, 80)}`);
-          throw new Error(`jssdk ${res.status}`);
-        }
-        push('jssdk=ok');
-        const cfg = (await res.json()) as {
-          appId: string;
-          timestamp: number;
-          nonceStr: string;
-          signature: string;
-        };
-        if (cancelled) return;
-
-        const wx = (window as unknown as { wx?: WechatSdk }).wx;
-        if (!wx) throw new Error('wx missing');
-
-        wx.config({
-          debug: false,
-          appId: cfg.appId,
-          timestamp: cfg.timestamp,
-          nonceStr: cfg.nonceStr,
-          signature: cfg.signature,
-          jsApiList: [],
-          openTagList: ['wx-open-launch-weapp'],
-        });
-
-        wx.ready(() => {
-          push('wx=ready');
-          if (!cancelled) setMode('openTag');
-        });
-        wx.error((err: unknown) => {
-          push(`wx=error ${JSON.stringify(err).slice(0, 120)}`);
-          if (!cancelled) setMode('fallback');
-        });
-
-        // 兜底：6 秒还没 ready 就当不可用，别让按钮一直空着
-        window.setTimeout(() => {
-          if (!cancelled) setMode((prev) => (prev === 'checking' ? 'fallback' : prev));
-        }, 6000);
-      } catch (error) {
-        push(`init=fail ${String(error).slice(0, 100)}`);
-        if (!cancelled) setMode('fallback');
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enableOpenTag]);
-
-  // 页面里其他位置（地图卡、留言卡）的按钮，在微信内也要能唤起二维码浮层
+  // 页面里其他位置（地图卡、留言卡）的按钮也要能唤起浮层
   useEffect(() => {
     const handler = () => setOpen(true);
     window.addEventListener(OPEN_EVENT, handler);
     return () => window.removeEventListener(OPEN_EVENT, handler);
   }, []);
 
+  // 浮层打开时锁滚动 + Esc 关闭
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -196,6 +77,25 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
       document.body.style.overflow = previous;
     };
   }, [open]);
+
+  /**
+   * 预取 scheme：必须提前拿好。
+   * iOS Safari 只要跳转发生在 await 之后，用户手势的上下文就失效，自定义协议会被直接拦掉，
+   * 表现是「按钮动了一下但什么都没发生」。
+   */
+  useEffect(() => {
+    if (env !== 'mobile') return;
+    let cancelled = false;
+    fetch(`/api/scheme/${type}/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { scheme?: string } | null) => {
+        if (!cancelled && data?.scheme) schemeRef.current = data.scheme;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [env, id, type]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -212,26 +112,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
     };
   }, []);
 
-  /** 预取 scheme：必须提前拿好，点击时才能同步跳转 */
-  useEffect(() => {
-    if (env === 'desktop') return;
-    let cancelled = false;
-    fetch(`/api/scheme/${type}/${id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { scheme?: string } | null) => {
-        if (!cancelled && data?.scheme) schemeRef.current = data.scheme;
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [env, id, type]);
-
-  /**
-   * 拉起微信。必须在点击事件的同步栈里执行 ——
-   * iOS Safari 只要中间隔了 await，手势上下文就失效，自定义协议会被直接拦掉，
-   * 表现就是"按钮动了一下但什么都没发生"。
-   */
+  /** 同步跳转，不能 await */
   const openByScheme = () => {
     const scheme = schemeRef.current;
     if (!scheme) return false;
@@ -244,7 +125,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
     anchor.click();
     anchor.remove();
 
-    // 2.5 秒还没跳走（没装微信 / 桌面端），退二维码
+    // 2.5 秒还没跳走（没装微信 / 被系统拦），退二维码
     timerRef.current = window.setTimeout(() => {
       setOpening(false);
       setOpen(true);
@@ -254,10 +135,10 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
 
   const onCtaClick = () => {
     setDebugInfo((prev) =>
-      prev ? [...prev, `click env=${env} mode=${mode} scheme=${schemeRef.current ? 'yes' : 'no'}`] : prev,
+      prev ? [...prev, `click env=${env} scheme=${schemeRef.current ? 'yes' : 'no'}`] : prev,
     );
 
-    // 微信内没接上开放标签、桌面端没有 weixin:// 协议，都直接给码
+    // 微信内只有长按识别这一条路；桌面端没有 weixin:// 处理器，直接给码
     if (env !== 'mobile') {
       setOpen(true);
       return;
@@ -265,7 +146,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
 
     if (openByScheme()) return;
 
-    // scheme 还没预取到，兜底异步取一次（部分浏览器仍会放行）
+    // scheme 还没预取到，兜底异步取一次
     setOpening(true);
     fetch(`/api/scheme/${type}/${id}`)
       .then((res) => (res.ok ? res.json() : null))
@@ -284,49 +165,17 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
       });
   };
 
-  // 开放标签的内容只能写在 shadow DOM 的模板里，外部 CSS 进不去
-  const openTagHtml = `
-    <style>
-      .wxa-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-        width:100%;height:54px;border-radius:14px;
-        background:linear-gradient(135deg,#23c023,#1aad19 55%,#149a13);color:#fff;
-        font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;}
-      .wxa-main{font-size:15.5px;font-weight:700;letter-spacing:.01em;}
-      .wxa-sub{font-size:11px;opacity:.86;}
-    </style>
-    <div class="wxa-btn">
-      <span class="wxa-main">打开小程序查看完整信息</span>
-      <span class="wxa-sub">联系方式 · 精确位置 · 全部线索</span>
-    </div>
-  `;
-
   return (
     <>
       <div className="mp-cta">
         <div className="mp-cta__inner">
-          {mode === 'openTag' ? (
-            <>
-              <div
-                className="mp-wxa-host"
-                ref={wxaHostRef}
-                dangerouslySetInnerHTML={{
-                  __html: `<wx-open-launch-weapp username="${wxaUsername}" path="pages/${type}/detail?id=${id}">${openTagHtml}</wx-open-launch-weapp>`,
-                }}
-              />
-              {/* 开放标签万一没响应，用户不至于卡死在这里 */}
-              <button type="button" className="mp-cta__alt" onClick={() => setOpen(true)}>
-                打不开？点这里看小程序码
-              </button>
-            </>
-          ) : (
-            <button type="button" className="mp-cta__btn" onClick={onCtaClick} disabled={opening}>
-              <span className="mp-cta__main">
-                <MiniProgramIcon />
-                {opening ? '正在打开微信…' : '打开小程序查看完整信息'}
-              </span>
-              <span className="mp-cta__sub">联系方式 · 精确位置 · 全部线索</span>
-            </button>
-          )}
+          <button type="button" className="mp-cta__btn" onClick={onCtaClick} disabled={opening}>
+            <span className="mp-cta__main">
+              <MiniProgramIcon />
+              {opening ? '正在打开微信…' : '打开小程序查看完整信息'}
+            </span>
+            <span className="mp-cta__sub">联系方式 · 精确位置 · 全部线索</span>
+          </button>
         </div>
       </div>
 
@@ -357,14 +206,14 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
             </button>
 
             <h2 className="mp-sheet__title" id="mp-sheet-title">
-              在小程序中查看
+              {TITLES[env]}
             </h2>
             <p className="mp-sheet__text">联系方式、精确位置与全部线索仅在小程序内展示</p>
 
             {qr ? (
               <div className="mp-sheet__qr">
                 {/* 微信内长按可「识别图中小程序码」，所以这里必须是原生 img */}
-                <img src={qr} alt="寻狗小程序码" width={196} height={196} />
+                <img src={qr} alt="寻狗小程序码" width={216} height={216} />
               </div>
             ) : (
               <p className="mp-sheet__text" style={{ margin: '20px 0' }}>
@@ -382,7 +231,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTa
             </div>
 
             <p className="mp-sheet__foot">
-              {env === 'wechat' ? '已在微信中？直接长按上图也能识别' : '小程序码可长按保存到本地'}
+              {env === 'wechat' ? '已经在微信里，长按上图直接进入' : '小程序码可长按保存到本地'}
             </p>
           </div>
         </div>
