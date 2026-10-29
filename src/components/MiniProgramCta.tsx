@@ -67,6 +67,8 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
   const wxaHostRef = useRef<HTMLDivElement | null>(null);
   /** 预取到的 scheme，点击时同步使用 */
   const schemeRef = useRef<string | null>(null);
+  /** ?debug=1 时在页面上打出诊断信息，手机上排查用 */
+  const [debugInfo, setDebugInfo] = useState<string[] | null>(null);
 
   // 开放标签自身报错（小程序未发布、主体不匹配等）也退回二维码，别让用户点了没反应
   useEffect(() => {
@@ -83,9 +85,9 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
 
     // 标签被微信升级后会撑出高度；1.2 秒还是 0 说明没升级成功，退回普通按钮
     const timer = window.setTimeout(() => {
-      if ((tag.getBoundingClientRect().height ?? 0) < 8) {
-        setMode('fallback');
-      }
+      const h = tag.getBoundingClientRect().height ?? 0;
+      setDebugInfo((prev) => (prev ? [...prev, `tagHeight=${Math.round(h)}`] : prev));
+      if (h < 8) setMode('fallback');
     }, 1200);
 
     return () => {
@@ -106,15 +108,27 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
 
     let cancelled = false;
     const pageUrl = window.location.href.split('#')[0];
+    const debugOn = new URLSearchParams(window.location.search).get('debug') === '1';
+    const notes: string[] = [`ua=${navigator.userAgent.slice(0, 60)}`, `env=${current}`];
+    const push = (line: string) => {
+      notes.push(line);
+      if (debugOn && !cancelled) setDebugInfo([...notes]);
+    };
+    if (debugOn) setDebugInfo([...notes]);
 
     (async () => {
       try {
         await loadSdk();
         if (cancelled) return;
+        push('sdk=ok');
 
         const params = new URLSearchParams({ url: pageUrl });
         const res = await fetch(`/api/jssdk?${params.toString()}`);
-        if (!res.ok) throw new Error(`jssdk ${res.status}`);
+        if (!res.ok) {
+          push(`jssdk=http ${res.status} ${(await res.text()).slice(0, 80)}`);
+          throw new Error(`jssdk ${res.status}`);
+        }
+        push('jssdk=ok');
         const cfg = (await res.json()) as {
           appId: string;
           timestamp: number;
@@ -137,9 +151,11 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
         });
 
         wx.ready(() => {
+          push('wx=ready');
           if (!cancelled) setMode('openTag');
         });
-        wx.error(() => {
+        wx.error((err: unknown) => {
+          push(`wx=error ${JSON.stringify(err).slice(0, 120)}`);
           if (!cancelled) setMode('fallback');
         });
 
@@ -147,7 +163,8 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
         window.setTimeout(() => {
           if (!cancelled) setMode((prev) => (prev === 'checking' ? 'fallback' : prev));
         }, 6000);
-      } catch {
+      } catch (error) {
+        push(`init=fail ${String(error).slice(0, 100)}`);
         if (!cancelled) setMode('fallback');
       }
     })();
@@ -234,6 +251,10 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
   };
 
   const onCtaClick = () => {
+    setDebugInfo((prev) =>
+      prev ? [...prev, `click env=${env} mode=${mode} scheme=${schemeRef.current ? 'yes' : 'no'}`] : prev,
+    );
+
     // 微信内没接上开放标签、桌面端没有 weixin:// 协议，都直接给码
     if (env !== 'mobile') {
       setOpen(true);
@@ -282,12 +303,19 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
       <div className="mp-cta">
         <div className="mp-cta__inner">
           {mode === 'openTag' ? (
-            <div
-              className="mp-wxa-host"
-              dangerouslySetInnerHTML={{
-                __html: `<wx-open-launch-weapp username="${wxaUsername}" path="pages/${type}/detail?id=${id}">${openTagHtml}</wx-open-launch-weapp>`,
-              }}
-            />
+            <>
+              <div
+                className="mp-wxa-host"
+                ref={wxaHostRef}
+                dangerouslySetInnerHTML={{
+                  __html: `<wx-open-launch-weapp username="${wxaUsername}" path="pages/${type}/detail?id=${id}">${openTagHtml}</wx-open-launch-weapp>`,
+                }}
+              />
+              {/* 开放标签万一没响应，用户不至于卡死在这里 */}
+              <button type="button" className="mp-cta__alt" onClick={() => setOpen(true)}>
+                打不开？点这里看小程序码
+              </button>
+            </>
           ) : (
             <button type="button" className="mp-cta__btn" onClick={onCtaClick} disabled={opening}>
               <span className="mp-cta__main">
@@ -299,6 +327,14 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
           )}
         </div>
       </div>
+
+      {debugInfo && (
+        <div className="mp-debug">
+          {debugInfo.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
 
       {open && (
         <div
