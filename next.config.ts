@@ -10,6 +10,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // 首页是纯静态页，Next 默认给 s-maxage=31536000（一年），
+        // 改一次文案就要去 CDN 刷新，容易变成"改了看不见"。压到 10 分钟。
+        source: '/',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=600, stale-while-revalidate=86400' },
+        ],
+      },
+      {
         // 详情页 HTML：CDN 可缓存 5 分钟，回源压力小；过期后先给旧页再后台刷新
         source: '/:type(lost|stray|adopt)/:path*',
         headers: [
