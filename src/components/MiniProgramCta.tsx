@@ -17,6 +17,8 @@ interface Props {
   id: number;
   /** 小程序原始 ID，开放标签的 username 必须用它（AppID 不行） */
   wxaUsername: string;
+  /** 是否启用微信开放标签；账号资质不到位时关掉，避免出现点击无响应的死按钮 */
+  enableOpenTag: boolean;
 }
 
 const STEPS: Record<Env, string[]> = {
@@ -58,7 +60,7 @@ function loadSdk(): Promise<void> {
   });
 }
 
-export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
+export default function MiniProgramCta({ qr, type, id, wxaUsername, enableOpenTag }: Props) {
   const [env, setEnv] = useState<Env>('desktop');
   const [mode, setMode] = useState<Mode>('checking');
   const [open, setOpen] = useState(false);
@@ -101,7 +103,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
     const current = detectEnv();
     setEnv(current);
 
-    if (current !== 'wechat') {
+    if (current !== 'wechat' || !enableOpenTag) {
       setMode('fallback');
       return;
     }
@@ -172,7 +174,7 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enableOpenTag]);
 
   // 页面里其他位置（地图卡、留言卡）的按钮，在微信内也要能唤起二维码浮层
   useEffect(() => {

@@ -18,6 +18,15 @@ export const WXA_APPID = 'wxc93395d0a3c41c49';
 /** 小程序原始 ID —— 微信开放标签的 username 只认这个，不认 AppID */
 export const WXA_ORIGINAL_ID = process.env.WXA_ORIGINAL_ID || 'gh_0c80acc3f473';
 
+/**
+ * 微信内是否启用开放标签。
+ * 开放标签要求「已认证服务号」，订阅号会渲染出标签但点击无响应，
+ * 所以默认关闭，走长按识别小程序码（体验确定）。确认账号资质后改成 on 即可，无需重新构建。
+ */
+export const WXA_OPEN_TAG_ENABLED = ['1', 'true', 'on'].includes(
+  (process.env.WXA_OPEN_TAG || '').toLowerCase(),
+);
+
 export const WXA_NAME = '寻狗';
 
 export const ICP_BEIAN = process.env.NEXT_PUBLIC_ICP_BEIAN || '';
