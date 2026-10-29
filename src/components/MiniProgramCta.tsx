@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { CloseIcon, MiniProgramIcon } from './Icons';
 
@@ -65,6 +65,8 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
   const [opening, setOpening] = useState(false);
   const timerRef = useRef<number | null>(null);
   const wxaHostRef = useRef<HTMLDivElement | null>(null);
+  /** 预取到的 scheme，点击时同步使用 */
+  const schemeRef = useRef<string | null>(null);
 
   // 开放标签自身报错（小程序未发布、主体不匹配等）也退回二维码，别让用户点了没反应
   useEffect(() => {
@@ -73,9 +75,23 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
     const tag = host?.querySelector('wx-open-launch-weapp');
     if (!tag) return;
 
-    const onError = () => setMode('fallback');
+    const onError = () => {
+      setMode('fallback');
+      setOpen(true);
+    };
     tag.addEventListener('error', onError);
-    return () => tag.removeEventListener('error', onError);
+
+    // 标签被微信升级后会撑出高度；1.2 秒还是 0 说明没升级成功，退回普通按钮
+    const timer = window.setTimeout(() => {
+      if ((tag.getBoundingClientRect().height ?? 0) < 8) {
+        setMode('fallback');
+      }
+    }, 1200);
+
+    return () => {
+      tag.removeEventListener('error', onError);
+      window.clearTimeout(timer);
+    };
   }, [mode]);
 
   // 环境判断；微信内尝试接开放标签，失败一律退回二维码
@@ -163,39 +179,86 @@ export default function MiniProgramCta({ qr, type, id, wxaUsername }: Props) {
   }, [open]);
 
   useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && timerRef.current) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+        setOpening(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
   }, []);
 
-  /** 外部浏览器：先试 scheme 拉起微信；2.5 秒还没跳走说明被拦或没装微信，退二维码 */
-  const launchByScheme = useCallback(async () => {
-    if (opening) return;
+  /** 预取 scheme：必须提前拿好，点击时才能同步跳转 */
+  useEffect(() => {
+    if (env === 'desktop') return;
+    let cancelled = false;
+    fetch(`/api/scheme/${type}/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { scheme?: string } | null) => {
+        if (!cancelled && data?.scheme) schemeRef.current = data.scheme;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [env, id, type]);
+
+  /**
+   * 拉起微信。必须在点击事件的同步栈里执行 ——
+   * iOS Safari 只要中间隔了 await，手势上下文就失效，自定义协议会被直接拦掉，
+   * 表现就是"按钮动了一下但什么都没发生"。
+   */
+  const openByScheme = () => {
+    const scheme = schemeRef.current;
+    if (!scheme) return false;
+
     setOpening(true);
-    try {
-      const res = await fetch(`/api/scheme/${type}/${id}`);
-      if (!res.ok) throw new Error(`scheme ${res.status}`);
-      const { scheme } = (await res.json()) as { scheme?: string };
-      if (!scheme) throw new Error('empty scheme');
+    const anchor = document.createElement('a');
+    anchor.href = scheme;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
 
-      timerRef.current = window.setTimeout(() => {
-        setOpening(false);
-        setOpen(true);
-      }, 2500);
-
-      window.location.href = scheme;
-    } catch {
+    // 2.5 秒还没跳走（没装微信 / 桌面端），退二维码
+    timerRef.current = window.setTimeout(() => {
       setOpening(false);
       setOpen(true);
-    }
-  }, [id, opening, type]);
+    }, 2500);
+    return true;
+  };
 
   const onCtaClick = () => {
-    if (env === 'wechat') {
+    // 微信内没接上开放标签、桌面端没有 weixin:// 协议，都直接给码
+    if (env !== 'mobile') {
       setOpen(true);
       return;
     }
-    void launchByScheme();
+
+    if (openByScheme()) return;
+
+    // scheme 还没预取到，兜底异步取一次（部分浏览器仍会放行）
+    setOpening(true);
+    fetch(`/api/scheme/${type}/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { scheme?: string } | null) => {
+        if (data?.scheme) {
+          schemeRef.current = data.scheme;
+          openByScheme();
+        } else {
+          setOpening(false);
+          setOpen(true);
+        }
+      })
+      .catch(() => {
+        setOpening(false);
+        setOpen(true);
+      });
   };
 
   // 开放标签的内容只能写在 shadow DOM 的模板里，外部 CSS 进不去
