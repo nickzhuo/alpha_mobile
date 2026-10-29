@@ -57,7 +57,7 @@ cat <<EOF
 
 服务器上执行：
 
-    cd /data/api && docker-compose pull alpha_mobile && docker-compose up -d alpha_mobile
+    cd /root/docker/api && docker-compose pull alpha_mobile && docker-compose up -d alpha_mobile
 
 回滚就把上面那行换回上一版 tag，重新 pull + up。
 EOF

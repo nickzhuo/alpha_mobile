@@ -72,7 +72,7 @@ npm start              # node .next/standalone/server.js
 # 2. 把 docker_api/api/docker-compose.yml 里 alpha_mobile 的 image tag 换成上一步的版本号
 
 # 3. 服务器上（docker-compose 是 v1.28.6，pull 不会隐式拉，必须显式 pull）
-cd /data/api
+cd /root/docker/api
 docker-compose pull alpha_mobile
 docker-compose up -d alpha_mobile
 ```
